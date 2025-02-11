@@ -35,8 +35,7 @@ fn main() {
             if input.ends_with("\n") {
                 input.pop();
             }
-            // [0] = x
-            // [1] = y
+            
             let expected_post: Vec<&str> = input.split(',').collect();
 
             let x: usize = (expected_post[0].trim()).parse::<usize>().unwrap() - 1;
@@ -71,6 +70,11 @@ fn main() {
                 exit(0);
             },
             None => (),
+        }
+
+        if check_draw(&board_condition) {
+            println!("No one won!");
+            exit(0);
         }
     };
 
@@ -115,87 +119,52 @@ fn empty_board() -> BoardState {
 }
 
 fn check_winner(board_state: &BoardState) -> Option<Player> {
-    // Diagonal Checking
-    let diagonals: [[[usize; 2]; 3]; 2] = [
-        [[0,0], [1,1], [2,2]],
-        [[2,0], [1,1], [0,2]]
-    ];
-
-    let mut winner: Option<Player> = None;
-
-    'diagonal_loop: for diagonal in diagonals.iter() {
-        for (i, diagonal_point) in diagonal.iter().enumerate() {
-
-            let previous_state: Option<Player> = if i == 0 { None } else { Some(board_state[diagonal[i - 1][0]][diagonal[i - 1][1]].clone()) };
-            let diagonal_state: Player = board_state[diagonal_point[0]][diagonal_point[1]].clone();
-            
-            if diagonal_state == Player::NONE {
-                continue 'diagonal_loop;
-            }
-
-            if previous_state != None {
-                let is_same_as_previous = match previous_state {
-                    Some(player) => if player == diagonal_state { true } else { false },
-                    None => false,
-                };
-    
-                if !is_same_as_previous {
-                    continue 'diagonal_loop;
-                }
-    
-                if i == 2 {
-                    winner = Some(diagonal_state);
-                    return winner;
-                }
-            }
+    // Check vertical state
+    for y in 0..3 {
+        if board_state[y][0] != Player::NONE
+            && board_state[y][0] == board_state[y][1]
+            && board_state[y][1] == board_state[y][2]
+        {
+            return Some(board_state[y][0].clone());
         }
-    };
+    }
 
-    'x_loop: for x in 0..2 {
-        for y in 0..2 {
-            let previous_state: Option<Player> = if y == 0 { None } else { Some(board_state[x][y - 1].clone()) };
-            let vertical_state: Player = board_state[x][y].clone();
-
-            if previous_state != None {
-                let is_same_as_previous = match previous_state {
-                    Some(player) => if player == vertical_state { true } else { false },
-                    None => false,
-                };
-
-                if !is_same_as_previous {
-                    continue 'x_loop;
-                }
-
-                if y == 2 {
-                    winner = Some(vertical_state);
-                    return winner;
-                }
-            }
+    // Check horizontal state
+    for x in 0..3 {
+        if board_state[0][x] != Player::NONE
+            && board_state[0][x] == board_state[1][x]
+            && board_state[1][x] == board_state[2][x]
+        {
+            return Some(board_state[0][x].clone());
         }
+    }
 
-        'y_loop: for y in 0..2 {
-            for x in 0..2 {
-                let previous_state: Option<Player> = if x == 0 { None } else { Some(board_state[y][x - 1].clone()) };
-                let vertical_state: Player = board_state[y][x].clone();
-    
-                if previous_state != None {
-                    let is_same_as_previous = match previous_state {
-                        Some(player) => if player == vertical_state { true } else { false },
-                        None => false,
-                    };
-    
-                    if !is_same_as_previous {
-                        continue 'y_loop;
-                    }
-    
-                    if x == 2 {
-                        winner = Some(vertical_state);
-                        return winner;
-                    }
-                }
+    // Check diagonal state
+    if board_state[1][1] != Player::NONE {
+        // Top-left to bottom-right
+        if board_state[0][0] == board_state[1][1]
+            && board_state[1][1] == board_state[2][2]
+        {
+            return Some(board_state[1][1].clone());
+        }
+        // Top-right to bottom-left
+        if board_state[0][2] == board_state[1][1]
+            && board_state[1][1] == board_state[2][0]
+        {
+            return Some(board_state[1][1].clone());
+        }
+    }
+
+    None
+}
+
+fn check_draw(board_state: &BoardState) -> bool {
+    for board_row in board_state.iter() {
+        for board_item in board_row.iter() {
+            if *board_item == Player::NONE {
+                return false;
             }
         }
     }
-    
-    return winner;
+    true
 }
