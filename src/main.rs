@@ -7,8 +7,8 @@ use crossterm::{
 };
 use tui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout, Rect},
-    widgets::{Block, Borders},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    widgets::{Block, Borders, Paragraph},
     Terminal,
 };
 
@@ -79,37 +79,45 @@ fn run_game(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> Resul
 }
 
 fn render_board<B: tui::backend::Backend>(f: &mut tui::Frame<B>, board_state: &BoardState) {
-    let area = f.size();
+    let area = centered_rect(30, 15, f.size());
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(33); 3])
+        .constraints([Constraint::Length(5); 3])
         .split(area);
     for (y, row) in rows.iter().enumerate() {
         let cols = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(33); 3])
+            .constraints([Constraint::Length(10); 3])
             .split(*row);
         for (x, col) in cols.iter().enumerate() {
+            let block = Block::default().borders(Borders::ALL);
+            let inner = block.inner(*col);
+            f.render_widget(block, *col);
+
             let cell = match board_state[y][x] {
                 Player::X => "X",
                 Player::O => "O",
                 Player::NONE => "",
             };
-            let block = Block::default().borders(Borders::ALL).title(cell);
-            f.render_widget(block, *col);
+            if !cell.is_empty() {
+                let area = Rect::new(inner.x, inner.y + inner.height / 2, inner.width, 1);
+                let paragraph = Paragraph::new(cell).alignment(Alignment::Center);
+                f.render_widget(paragraph, area);
+            }
         }
     }
 }
 
 fn mouse_to_cell(area: Rect, column: u16, row: u16) -> Option<(usize, usize)> {
+    let board = centered_rect(30, 15, area);
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(33); 3])
-        .split(area);
+        .constraints([Constraint::Length(5); 3])
+        .split(board);
     for (y, r) in rows.iter().enumerate() {
         let cols = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(33); 3])
+            .constraints([Constraint::Length(10); 3])
             .split(*r);
         for (x, c) in cols.iter().enumerate() {
             if column >= c.x && column < c.x + c.width && row >= c.y && row < c.y + c.height {
@@ -177,4 +185,12 @@ fn check_draw(board_state: &BoardState) -> bool {
         }
     }
     true
+}
+
+fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
+    let w = width.min(area.width);
+    let h = height.min(area.height);
+    let x = area.x + (area.width - w) / 2;
+    let y = area.y + (area.height - h) / 2;
+    Rect::new(x, y, w, h)
 }
