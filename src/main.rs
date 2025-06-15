@@ -8,7 +8,7 @@ use crossterm::{
 use tui::{
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, List, ListItem, Paragraph},
     Terminal,
 };
 
@@ -33,23 +33,86 @@ enum GameMode {
     VsComputer(Difficulty),
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
-    let mode = match std::env::args().nth(1).as_deref() {
-        Some("easy") => GameMode::VsComputer(Difficulty::Easy),
-        Some("hard") => GameMode::VsComputer(Difficulty::Hard),
-        _ => GameMode::HumanVsHuman,
-    };
+fn main_menu(
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+) -> Result<Option<GameMode>, Box<dyn Error>> {
+    let options = [
+        "Human vs Human",
+        "Vs Computer - Easy",
+        "Vs Computer - Hard",
+        "Quit",
+    ];
+    let mut selected = 0usize;
 
-    println!("Welcome to Rust Tic Tac Toe - press 'q' to quit");
-    if let GameMode::VsComputer(diff) = mode {
-        println!("Playing vs computer - {:?} difficulty", diff);
+    loop {
+        terminal.draw(|f| {
+            let area = centered_rect(30, 10, f.size());
+            let items: Vec<ListItem> = options
+                .iter()
+                .enumerate()
+                .map(|(i, o)| {
+                    let style = if i == selected {
+                        tui::style::Style::default().add_modifier(tui::style::Modifier::REVERSED)
+                    } else {
+                        tui::style::Style::default()
+                    };
+                    ListItem::new((*o).to_string()).style(style)
+                })
+                .collect();
+            let list = List::new(items).block(Block::default().borders(Borders::ALL).title("Menu"));
+            f.render_widget(list, area);
+        })?;
+
+        if event::poll(Duration::from_millis(200))? {
+            match event::read()? {
+                Event::Key(key) => match key.code {
+                    KeyCode::Up => {
+                        if selected > 0 {
+                            selected -= 1;
+                        }
+                    }
+                    KeyCode::Down => {
+                        if selected < options.len() - 1 {
+                            selected += 1;
+                        }
+                    }
+                    KeyCode::Enter => {
+                        return Ok(match selected {
+                            0 => Some(GameMode::HumanVsHuman),
+                            1 => Some(GameMode::VsComputer(Difficulty::Easy)),
+                            2 => Some(GameMode::VsComputer(Difficulty::Hard)),
+                            _ => None,
+                        });
+                    }
+                    KeyCode::Char('q') => return Ok(None),
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
     }
+}
 
+fn main() -> Result<(), Box<dyn Error>> {
     enable_raw_mode()?;
     let mut stdout = stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
+
+    let mode = match main_menu(&mut terminal)? {
+        Some(m) => m,
+        None => {
+            disable_raw_mode()?;
+            execute!(
+                terminal.backend_mut(),
+                LeaveAlternateScreen,
+                DisableMouseCapture
+            )?;
+            terminal.show_cursor()?;
+            return Ok(());
+        }
+    };
 
     let res = run_game(&mut terminal, mode);
 
@@ -70,6 +133,10 @@ fn run_game(
 ) -> Result<(), Box<dyn Error>> {
     let mut board_condition: BoardState = empty_board();
     let mut player_turn: Player = Player::X;
+    println!("Press 'q' to quit");
+    if let GameMode::VsComputer(diff) = mode {
+        println!("Playing vs computer - {:?} difficulty", diff);
+    }
     let mut rng_seed = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
