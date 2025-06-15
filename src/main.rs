@@ -54,7 +54,7 @@ fn run_game(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> Resul
             match event::read()? {
                 Event::Key(k) if k.code == KeyCode::Char('q') => return Ok(()),
                 Event::Mouse(m) if matches!(m.kind, MouseEventKind::Up(_)) => {
-                    if let Some((x, y)) = mouse_to_cell(f.size(), m.column, m.row) {
+                    if let Some((x, y)) = mouse_to_cell(terminal.size()?, m.column, m.row) {
                         if matches!(board_condition[y][x], Player::NONE) {
                             board_condition[y][x] = player_turn.clone();
                             player_turn = if player_turn == Player::X { Player::O } else { Player::X };
