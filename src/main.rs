@@ -1,4 +1,16 @@
-use std::{io::{stdin, stdout, Stdin, Write}, process::exit};
+use std::{error::Error, io::stdout, time::Duration};
+
+use crossterm::{
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, MouseEventKind},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
+use tui::{
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout, Rect},
+    widgets::{Block, Borders},
+    Terminal,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 enum Player {
@@ -9,105 +21,103 @@ enum Player {
 
 type BoardState = [[Player; 3]; 3];
 
-fn main() {
-    println!("Welcome to Rust Tic Tac Toe");
+fn main() -> Result<(), Box<dyn Error>> {
+    println!("Welcome to Rust Tic Tac Toe - press 'q' to quit");
 
+    enable_raw_mode()?;
+    let mut stdout = stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    let res = run_game(&mut terminal);
+
+    disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
+    terminal.show_cursor()?;
+
+    if let Err(err) = res {
+        eprintln!("{err}");
+    }
+
+    Ok(())
+}
+
+fn run_game(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> Result<(), Box<dyn Error>> {
     let mut board_condition: BoardState = empty_board();
     let mut player_turn: Player = Player::X;
 
-    let stdin: Stdin = stdin();
-    let input: &mut String = &mut String::new();
+    loop {
+        terminal.draw(|f| render_board(f, &board_condition))?;
 
-    render_board(&board_condition);
+        if event::poll(Duration::from_millis(200))? {
+            match event::read()? {
+                Event::Key(k) if k.code == KeyCode::Char('q') => return Ok(()),
+                Event::Mouse(m) if matches!(m.kind, MouseEventKind::Up(_)) => {
+                    if let Some((x, y)) = mouse_to_cell(f.size(), m.column, m.row) {
+                        if matches!(board_condition[y][x], Player::NONE) {
+                            board_condition[y][x] = player_turn.clone();
+                            player_turn = if player_turn == Player::X { Player::O } else { Player::X };
 
-    'gameloop: loop {
-        input.clear();
-
-        println!("Current player : {:?}", player_turn);
-        print!("Please input your position X,Y (e.g 1,3) : ");
-
-        let _ = stdout().flush();
-        let _ = stdin.read_line(input);
-
-        if input == "\n" {
-            println!("Please provide a valid input!");
-        } else {
-            if input.ends_with("\n") {
-                input.pop();
-            }
-            
-            let expected_post: Vec<&str> = input.split(',').collect();
-
-            let x: usize = (expected_post[0].trim()).parse::<usize>().unwrap() - 1;
-            let y: usize = (expected_post[1].trim()).parse::<usize>().unwrap() - 1;
-
-            if x > 2 || y > 2 {
-                println!("Invalid value! x or y cannot have more than 3 value!");
-                continue 'gameloop;
-            }
-
-            if !matches!(board_condition[y][x], Player::NONE) {
-                println!("Invalid input: {},{} already filled by {:?}", x + 1, y + 1, board_condition[y][x]);
-                continue 'gameloop;
-            }
-
-            board_condition[y][x] = player_turn.clone();
-
-            if matches!(player_turn, Player::X) {
-                player_turn = Player::O;
-            } else {
-                player_turn = Player::X;
+                            if let Some(p) = check_winner(&board_condition) {
+                                terminal.draw(|f| render_board(f, &board_condition))?;
+                                println!("Player {:?} wins!", p);
+                                return Ok(());
+                            }
+                            if check_draw(&board_condition) {
+                                terminal.draw(|f| render_board(f, &board_condition))?;
+                                println!("It's a draw!");
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+                _ => {}
             }
         }
-
-        render_board(&board_condition);
-        
-        let winner: Option<Player> = check_winner(&board_condition);
-
-        match winner {
-            Some(player) => {
-                println!("CONGRATULATION! \nPlayer {:?} is win", player);
-                exit(0);
-            },
-            None => (),
-        }
-
-        if check_draw(&board_condition) {
-            println!("No one won!");
-            exit(0);
-        }
-    };
-
+    }
 }
 
-fn render_board(board_state: &BoardState) {
-    println!("*---*---*---*");
-    for board_row in board_state.iter() {
-        for (i, item) in board_row.iter().enumerate() {
-
-            if i == 0 {
-                print!("| ")
-            } else if i == 1 {
-                print!(" | ")
-            } else if i == 2 {
-                print!(" | ")
-            }
-
-            let item_str: String = match item {
-                Player::NONE => String::from("-"),
-                Player::X => String::from("X"),
-                Player::O => String::from("O"),
+fn render_board<B: tui::backend::Backend>(f: &mut tui::Frame<B>, board_state: &BoardState) {
+    let area = f.size();
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(33); 3])
+        .split(area);
+    for (y, row) in rows.iter().enumerate() {
+        let cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(33); 3])
+            .split(*row);
+        for (x, col) in cols.iter().enumerate() {
+            let cell = match board_state[y][x] {
+                Player::X => "X",
+                Player::O => "O",
+                Player::NONE => "",
             };
+            let block = Block::default().borders(Borders::ALL).title(cell);
+            f.render_widget(block, *col);
+        }
+    }
+}
 
-            print!("{item_str}");
-
-            if i == 2 {
-                print!(" |")
+fn mouse_to_cell(area: Rect, column: u16, row: u16) -> Option<(usize, usize)> {
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(33); 3])
+        .split(area);
+    for (y, r) in rows.iter().enumerate() {
+        let cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(33); 3])
+            .split(*r);
+        for (x, c) in cols.iter().enumerate() {
+            if column >= c.x && column < c.x + c.width && row >= c.y && row < c.y + c.height {
+                return Some((x, y));
             }
         }
-        
-        println!("\n*---*---*---*");
     }
+    None
 }
 
 fn empty_board() -> BoardState {
